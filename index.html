@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>2025 경기도문화원연합회 합동연수 밸런스 게임</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- PeerJS (서버 없는 통신용) -->
+    <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
+    <!-- QR Code 라이브러리 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    
+    <link href="https://fonts.googleapis.com/css2?family=Jua&family=Noto+Sans+KR:wght@400;700;900&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Jua', sans-serif; overflow: hidden; user-select: none; background-color: #111827; color: white; }
+        .text-shadow { text-shadow: 2px 2px 4px rgba(0,0,0,0.5); }
+        
+        /* 로비 화면 */
+        .lobby-btn {
+            width: 100%; padding: 2rem; font-size: 1.5rem; border-radius: 1rem;
+            transition: all 0.2s; font-weight: bold; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
+        }
+        .lobby-btn:active { transform: scale(0.98); }
+
+        /* 게임 화면 */
+        .vs-badge {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 20;
+            background: #fbbf24; border: 6px solid white; border-radius: 50%;
+            width: 80px; height: 80px; display: flex; align-items: center; justify-content: center;
+            font-size: 2rem; font-weight: 900; color: #000; box-shadow: 0 10px 15px rgba(0,0,0,0.3);
+        }
+        
+        /* 모바일 투표 버튼 */
+        .vote-btn {
+            height: 100%; width: 100%; border-radius: 1rem;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            font-size: 4rem; transition: all 0.1s; position: relative; overflow: hidden;
+        }
+        .vote-btn:active { transform: scale(0.95); filter: brightness(0.9); }
+        .vote-btn.selected { border: 8px solid #fbbf24; transform: scale(0.98); }
+
+        /* 결과 바 */
+        .bar-bg { width: 100%; background: #374151; height: 3rem; border-radius: 99px; overflow: hidden; position: relative; }
+        .bar-fill { height: 100%; transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1); display: flex; align-items: center; justify-content: flex-end; padding-right: 1rem; font-size: 1.2rem; font-weight: bold; }
+        
+        /* 애니메이션 */
+        .fade-in { animation: fadeIn 0.3s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        
+        /* 모달 */
+        .modal { background: rgba(0,0,0,0.9); backdrop-filter: blur(8px); }
+    </style>
+</head>
+<body class="h-screen w-screen flex flex-col">
+
+    <!-- ================= [1. 로비 화면] ================= -->
+    <div id="screen-lobby" class="flex-1 flex flex-col items-center justify-center p-6 max-w-md mx-auto w-full">
+        <h1 class="text-4xl text-yellow-400 mb-2 text-center leading-tight">2025 합동연수<br>밸런스 게임</h1>
+        <p class="text-gray-400 mb-8 text-center text-sm">실시간 인터랙티브 투표 시스템</p>
+        
+        <div class="w-full space-y-4">
+            <button onclick="createRoom()" class="lobby-btn bg-indigo-600 hover:bg-indigo-500">
+                📺 방 만들기 (진행자)
+            </button>
+            <button onclick="showJoinInput()" class="lobby-btn bg-green-600 hover:bg-green-500">
+                📱 참여하기 (참가자)
+            </button>
+        </div>
+
+        <!-- 참여하기 코드 입력 폼 -->
+        <div id="join-form" class="hidden w-full mt-6 p-4 bg-gray-800 rounded-xl fade-in">
+            <label class="block text-gray-400 mb-2 text-center">진행자 화면의 4자리 코드를 입력하세요</label>
+            <div class="flex gap-2">
+                <input type="text" id="room-code-input" maxlength="4" class="flex-1 bg-gray-700 border-2 border-gray-600 rounded-lg px-4 py-3 text-center text-2xl font-mono uppercase focus:border-yellow-400 outline-none" placeholder="CODE">
+                <button onclick="joinRoom()" class="bg-yellow-500 text-black font-bold px-6 py-3 rounded-lg hover:bg-yellow-400">입장</button>
+            </div>
+        </div>
+        <p id="status-msg" class="mt-4 text-gray-500 text-sm text-center h-5"></p>
+    </div>
+
+    <!-- ================= [2. 호스트(진행자) 화면] ================= -->
+    <div id="screen-host" class="hidden h-full flex-col bg-gray-900 relative">
+        <!-- 상단 정보바 -->
+        <div class="bg-gray-800 p-3 flex justify-between items-center shadow-lg z-50">
+            <div class="flex items-center gap-4">
+                <div class="bg-indigo-600 px-3 py-1 rounded-lg font-mono font-bold text-xl">
+                    방 코드: <span id="host-room-code" class="text-yellow-300 tracking-widest">----</span>
+                </div>
+                <div class="text-gray-400 text-sm">
+                    👤 접속자: <span id="connected-count" class="text-white font-bold text-lg">0</span>명
+                </div>
+            </div>
+            <div class="flex gap-2">
+                <button onclick="toggleVoting()" id="btn-toggle-vote" class="bg-green-600 px-4 py-2 rounded hover:bg-green-500 font-bold transition-colors">투표 시작</button>
+                <button onclick="revealResult()" id="btn-reveal" class="bg-gray-600 px-4 py-2 rounded hover:bg-gray-500 font-bold hidden">결과 공개</button>
+                <button onclick="nextQuestion()" id="btn-next" class="bg-indigo-600 px-4 py-2 rounded hover:bg-indigo-500 font-bold hidden">다음 문제</button>
+            </div>
+        </div>
+
+        <!-- 게임 메인 -->
+        <div class="flex-1 relative flex flex-col md:flex-row">
+            <!-- 질문 텍스트 (오버레이) -->
+            <div class="absolute top-0 left-0 w-full p-6 z-40 pointer-events-none text-center">
+                <span id="q-badge" class="bg-yellow-400 text-black px-3 py-1 rounded-full font-bold shadow-lg mb-2 inline-block">Round 1</span>
+                <h2 id="q-title" class="text-3xl md:text-5xl text-shadow font-bold leading-tight drop-shadow-md">질문 대기중...</h2>
+            </div>
+
+            <!-- VS 뱃지 -->
+            <div class="vs-badge">VS</div>
+
+            <!-- 옵션 A -->
+            <div class="flex-1 bg-red-600 flex flex-col items-center justify-center p-4 text-center relative overflow-hidden">
+                <div class="z-10 mt-16">
+                    <div class="text-6xl mb-4 drop-shadow-lg">🅰️</div>
+                    <h3 id="host-opt-a" class="text-3xl md:text-4xl font-bold mb-2">옵션 A</h3>
+                    <p id="host-sub-a" class="text-xl text-red-100 bg-red-800/40 px-3 py-1 rounded inline-block">설명</p>
+                </div>
+                <!-- 투표율 차오르는 배경 -->
+                <div id="fill-a" class="absolute bottom-0 left-0 w-full bg-black/30 transition-all duration-700" style="height: 0%"></div>
+                <div id="count-a" class="absolute bottom-4 left-4 text-4xl font-bold opacity-50 z-20">0</div>
+            </div>
+
+            <!-- 옵션 B -->
+            <div class="flex-1 bg-blue-600 flex flex-col items-center justify-center p-4 text-center relative overflow-hidden">
+                <div class="z-10 mt-16">
+                    <div class="text-6xl mb-4 drop-shadow-lg">🅱️</div>
+                    <h3 id="host-opt-b" class="text-3xl md:text-4xl font-bold mb-2">옵션 B</h3>
+                    <p id="host-sub-b" class="text-xl text-blue-100 bg-blue-800/40 px-3 py-1 rounded inline-block">설명</p>
+                </div>
+                <!-- 투표율 차오르는 배경 -->
+                <div id="fill-b" class="absolute bottom-0 left-0 w-full bg-black/30 transition-all duration-700" style="height: 0%"></div>
+                <div id="count-b" class="absolute bottom-4 right-4 text-4xl font-bold opacity-50 z-20">0</div>
+            </div>
+        </div>
+
+        <!-- 결과(팩트체크) 모달 -->
+        <div id="result-modal" class="hidden absolute inset-0 modal z-50 flex items-center justify-center p-4">
+            <div class="bg-white text-gray-900 rounded-2xl max-w-4xl w-full p-8 shadow-2xl transform transition-all scale-95 opacity-0" id="result-card">
+                <div class="text-center mb-6">
+                    <h2 class="text-3xl font-bold mb-4">📊 투표 결과</h2>
+                    <div class="space-y-4 mb-8">
+                        <div class="flex items-center gap-3">
+                            <div class="text-2xl font-bold text-red-600 w-8">A</div>
+                            <div class="bar-bg"><div id="bar-a" class="bar-fill bg-red-500 text-white" style="width: 50%">50%</div></div>
+                        </div>
+                        <div class="flex items-center gap-3">
+                            <div class="text-2xl font-bold text-blue-600 w-8">B</div>
+                            <div class="bar-bg"><div id="bar-b" class="bar-fill bg-blue-500 text-white" style="width: 50%">50%</div></div>
+                        </div>
+                    </div>
+                    <hr class="border-gray-200 my-6">
+                    <div class="text-yellow-600 font-bold text-xl tracking-widest mb-2">FACT CHECK</div>
+                    <h3 id="fact-title" class="text-2xl md:text-3xl font-bold text-indigo-900 mb-4 break-keep">팩트 제목</h3>
+                    <p id="fact-desc" class="text-lg md:text-xl text-gray-700 leading-relaxed break-keep">설명 내용</p>
+                </div>
+                <button onclick="closeModal()" class="w-full bg-gray-800 text-white py-4 rounded-xl font-bold text-xl hover:bg-gray-700">확인</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ================= [3. 게스트(참가자) 화면] ================= -->
+    <div id="screen-guest" class="hidden h-full flex-col p-4 bg-gray-900">
+        <!-- 상단 상태 -->
+        <div class="text-center mb-4">
+            <div class="inline-block bg-gray-800 px-4 py-1 rounded-full text-sm text-gray-400 mb-2">
+                Connected to: <span id="guest-room-code" class="text-white font-bold">----</span>
+            </div>
+            <h2 id="guest-q-title" class="text-xl font-bold text-white leading-snug break-keep">질문 대기중...</h2>
+        </div>
+
+        <!-- 투표 버튼 영역 -->
+        <div id="vote-area" class="flex-1 flex flex-col gap-4 opacity-50 pointer-events-none transition-opacity duration-300">
+            <button onclick="sendVote('A')" id="btn-a" class="vote-btn bg-red-600">
+                <span class="text-6xl mb-2">🅰️</span>
+                <span id="guest-opt-a" class="text-xl font-bold px-4 text-center">선택 A</span>
+            </button>
+            <button onclick="sendVote('B')" id="btn-b" class="vote-btn bg-blue-600">
+                <span class="text-6xl mb-2">🅱️</span>
+                <span id="guest-opt-b" class="text-xl font-bold px-4 text-center">선택 B</span>
+            </button>
+        </div>
+
+        <!-- 하단 상태 메시지 -->
+        <div id="guest-status" class="mt-4 text-center font-bold text-yellow-400 h-8 animate-pulse">
+            사회자가 투표를 시작하기를 기다려주세요...
+        </div>
+    </div>
+
+    <script>
+        // --- 데이터 (질문 리스트) ---
+        const questions = [
+            {
+                title: "Q1. 예산의 신이 내려왔다! 당신의 선택은?",
+                a: "묻고 더블로 가! (100억)", aSub: "간섭 심함",
+                b: "소확행...? (1억)", bSub: "간섭 없음",
+                factTitle: "💸 현실은... 돈은 B, 간섭은 A?",
+                factDesc: "경기도 문화원 예산의 약 75%가 지자체 보조금입니다. 재정 자립이 절실합니다!"
+            },
+            {
+                title: "Q2. 신입사원 채용, 누굴 뽑을까?",
+                a: "일당백 어벤져스", aSub: "3개월 뒤 이직",
+                b: "지역 토박이 돌부처", bSub: "30년 근속 (컴맹)",
+                factTitle: "🏃‍♂️ 떠나는 인재, 남는 현실",
+                factDesc: "직원의 30%가 계약직 등 불안정한 상태입니다. 표준 보수 규정이 시급합니다."
+            },
+            {
+                title: "Q3. 건물 리모델링, 당신의 선택은?",
+                a: "최첨단 빌딩 (지하 3층)", aSub: "햇빛 안듦",
+                b: "운치있는 한옥 (비 샙니다)", bSub: "화장실 재래식",
+                factTitle: "🏠 우리 집 나이는 32살",
+                factDesc: "경기도 문화원 건물의 평균 사용 연수는 약 32년입니다. 시설 개선 데이터가 필요합니다."
+            },
+            {
+                title: "Q4. 향토사 연구소 책 발간, 대박의 기준?",
+                a: "학계의 전설 (창고행)", aSub: "아무도 안 읽음",
+                b: "유튜브 100만뷰 (악플)", bSub: "역사 고증 논란",
+                factTitle: "📚 연구소는 많은데...",
+                factDesc: "25개 문화원이 연구소를 운영 중이나, 아카이브 사업 수행률은 절반 수준입니다."
+            },
+            {
+                title: "Q5. 야외 축제 당일, 최악의 상황은?",
+                a: "폭우 주의보 ☔", aSub: "천막 부여잡고 움",
+                b: "민원 폭주 📢", aSub: "경찰 출동",
+                factTitle: "🎪 야외 행사의 비애",
+                factDesc: "대부분 사업이 야외 행사에 집중되어 있습니다. 우천 매뉴얼 데이터가 필요합니다."
+            },
+            {
+                title: "Q6. 문화학교 수강료, 원장님의 결단?",
+                a: "전면 무료 선언", aSub: "재료비 없음",
+                b: "수강료 2배 인상", aSub: "수강생 1명",
+                factTitle: "💰 공공성 vs 수익성",
+                factDesc: "자부담 비율 15%. 건강한 자립을 위해 적절한 수강료 가이드라인이 필요합니다."
+            },
+            {
+                title: "Q7. 행사 객석 분위기, 어디가 나은가?",
+                a: "어르신 100% (주무심)", aSub: "호응은 좋음",
+                b: "MZ세대 100% (폰만 봄)", aSub: "와이파이 찾음",
+                factTitle: "👴 고령화된 문화원",
+                factDesc: "청년·청소년 프로그램 비율이 매우 낮습니다. 미래 세대를 위한 문을 열어야 합니다."
+            },
+            {
+                title: "Q8. 퇴근 10분 전, 더 소름 돋는 건?",
+                a: "영수증 1장 분실", aSub: "5,000원 때문에 야근",
+                b: "총람 파일 깨짐", aSub: "다시 작성해야 함",
+                factTitle: "📁 시스템이 필요해",
+                factDesc: "정확한 데이터 수집 체계를 구축하여 불필요한 행정 소모를 줄여야 합니다."
+            },
+            {
+                title: "Q9. 우리 문화원의 10년 뒤 미래?",
+                a: "계획봇 (시키는 대로)", aSub: "재미 없음",
+                b: "야생마 (닥치는 대로)", aSub: "매일이 스릴",
+                factTitle: "🧭 나침반 없는 항해",
+                factDesc: "31개 중 24곳(76%)이 중장기 발전계획이 없습니다. 나침반이 필요합니다."
+            },
+            {
+                title: "Q10. [Last] 내년 총람 조사, 나의 태도는?",
+                a: "복붙 (Ctrl+C, V)", aSub: "나중에 예산 깎임",
+                b: "영혼의 팩트 입력", aSub: "내년 인력 증원",
+                factTitle: "🤝 데이터는 우리의 무기",
+                factDesc: "정답은 B! 여러분이 채워주시는 데이터가 우리를 지키는 가장 큰 무기입니다."
+            }
+        ];
+
+        // --- 전역 변수 ---
+        let peer = null;
+        let conn = null; // 게스트용
+        let connections = []; // 호스트용 (연결된 게스트들)
+        let myRoomCode = "";
+        let currentIdx = 0;
+        let votes = { A: 0, B: 0 };
+        let isVotingOpen = false;
+        let isHost = false;
+
+        // DOM 요소
+        const msgEl = document.getElementById('status-msg');
+        
+        // ================= [PeerJS 공통 로직] =================
+        
+        function generateRoomCode() {
+            // 랜덤 4자리 숫자 코드 생성 (충돌 방지 위해 Prefix 사용)
+            return Math.floor(1000 + Math.random() * 9000).toString();
+        }
+        
+        function getPeerId(code) {
+            return `ggcc2025-balance-game-${code}`;
+        }
+
+        // ================= [호스트 로직] =================
+        
+        function createRoom() {
+            msgEl.innerText = "방을 생성하는 중...";
+            const code = generateRoomCode();
+            const peerId = getPeerId(code);
+            
+            // PeerJS 객체 생성
+            peer = new Peer(peerId, {
+                debug: 1
+            });
+
+            peer.on('open', (id) => {
+                console.log('My peer ID is: ' + id);
+                myRoomCode = code;
+                isHost = true;
+                enterHostMode();
+            });
+
+            peer.on('connection', (c) => {
+                // 게스트 접속 시
+                connections.push(c);
+                updateConnectionCount();
+                
+                // 현재 상태 전송
+                setTimeout(() => {
+                    sendStateTo(c); 
+                }, 500);
+
+                c.on('data', (data) => {
+                    handleDataFromGuest(data);
+                });
+                
+                c.on('close', () => {
+                    connections = connections.filter(conn => conn !== c);
+                    updateConnectionCount();
+                });
+            });
+
+            peer.on('error', (err) => {
+                console.error(err);
+                if(err.type === 'unavailable-id') {
+                    createRoom(); // ID 충돌시 재시도
+                } else {
+                    alert("연결 오류: " + err.type);
+                }
+            });
+        }
+
+        function enterHostMode() {
+            document.getElementById('screen-lobby').classList.add('hidden');
+            document.getElementById('screen-host').classList.remove('hidden');
+            document.getElementById('screen-host').classList.add('flex');
+            document.getElementById('host-room-code').innerText = myRoomCode;
+            
+            renderHostQuestion();
+        }
+
+        function updateConnectionCount() {
+            document.getElementById('connected-count').innerText = connections.length;
+        }
+
+        function broadcast(data) {
+            connections.forEach(c => c.send(data));
+        }
+
+        function sendStateTo(conn) {
+            const q = questions[currentIdx];
+            conn.send({
+                type: 'STATE',
+                idx: currentIdx,
+                title: q.title,
+                optA: q.a,
+                optB: q.b,
+                isOpen: isVotingOpen
+            });
+        }
+
+        function handleDataFromGuest(data) {
+            if (data.type === 'VOTE') {
+                if (!isVotingOpen) return;
+                // 투표 집계
+                if (data.choice === 'A') votes.A++;
+                if (data.choice === 'B') votes.B++;
+                updateHostVoteUI();
+            }
+        }
+
+        // 호스트 UI 제어
+        function renderHostQuestion() {
+            const q = questions[currentIdx];
+            document.getElementById('q-badge').innerText = `Round ${currentIdx + 1}`;
+            document.getElementById('q-title').innerText = q.title;
+            document.getElementById('host-opt-a').innerText = q.a;
+            document.getElementById('host-sub-a').innerText = q.aSub;
+            document.getElementById('host-opt-b').innerText = q.b;
+            document.getElementById('host-sub-b').innerText = q.bSub;
+            
+            // 초기화
+            votes = { A: 0, B: 0 };
+            updateHostVoteUI();
+            document.getElementById('fill-a').style.height = '0%';
+            document.getElementById('fill-b').style.height = '0%';
+            
+            // 버튼 상태
+            document.getElementById('btn-toggle-vote').classList.remove('hidden');
+            document.getElementById('btn-toggle-vote').innerText = "투표 시작";
+            document.getElementById('btn-toggle-vote').className = "bg-green-600 px-4 py-2 rounded hover:bg-green-500 font-bold transition-colors";
+            document.getElementById('btn-reveal').classList.add('hidden');
+            document.getElementById('btn-next').classList.add('hidden');
+
+            isVotingOpen = false;
+            broadcast({ type: 'NEW_ROUND', idx: currentIdx, title: q.title, optA: q.a, optB: q.b });
+        }
+
+        function toggleVoting() {
+            const btn = document.getElementById('btn-toggle-vote');
+            if (!isVotingOpen) {
+                isVotingOpen = true;
+                btn.innerText = "투표 마감";
+                btn.className = "bg-red-600 px-4 py-2 rounded hover:bg-red-500 font-bold transition-colors animate-pulse";
+                broadcast({ type: 'VOTE_START' });
+            } else {
+                isVotingOpen = false;
+                btn.classList.add('hidden');
+                document.getElementById('btn-reveal').classList.remove('hidden');
+                broadcast({ type: 'VOTE_END' });
+            }
+        }
+
+        function updateHostVoteUI() {
+            const total = votes.A + votes.B;
+            if (total > 0) {
+                // 단순 수치만 보여주거나, 살짝 차오르는 느낌 (아직 결과 공개 전이므로 50% 높이 제한 등으로 힌트만 줌)
+                // 여기서는 실시간으로 높이를 반영하되, 숫자는 숨기는 식도 가능. 
+                // 요청사항: "실시간으로 올라가는" -> 다 보여줌.
+                const perA = (votes.A / total) * 100;
+                const perB = (votes.B / total) * 100;
+                document.getElementById('fill-a').style.height = `${perA}%`;
+                document.getElementById('fill-b').style.height = `${perB}%`;
+            }
+            document.getElementById('count-a').innerText = votes.A;
+            document.getElementById('count-b').innerText = votes.B;
+        }
+
+        function revealResult() {
+            const q = questions[currentIdx];
+            const total = votes.A + votes.B || 1;
+            const perA = Math.round((votes.A / total) * 100);
+            const perB = 100 - perA;
+
+            // 모달 내용 채우기
+            document.getElementById('bar-a').style.width = `${perA}%`;
+            document.getElementById('bar-a').innerText = `${perA}% (${votes.A}명)`;
+            document.getElementById('bar-b').style.width = `${perB}%`;
+            document.getElementById('bar-b').innerText = `${perB}% (${votes.B}명)`;
+            
+            document.getElementById('fact-title').innerHTML = q.factTitle;
+            document.getElementById('fact-desc').innerHTML = q.factDesc;
+
+            // 모달 표시
+            const modal = document.getElementById('result-modal');
+            const card = document.getElementById('result-card');
+            modal.classList.remove('hidden');
+            setTimeout(() => {
+                card.classList.remove('scale-95', 'opacity-0');
+                card.classList.add('scale-100', 'opacity-100');
+            }, 50);
+
+            document.getElementById('btn-reveal').classList.add('hidden');
+            document.getElementById('btn-next').classList.remove('hidden');
+        }
+
+        function closeModal() {
+            const modal = document.getElementById('result-modal');
+            const card = document.getElementById('result-card');
+            card.classList.add('scale-95', 'opacity-0');
+            setTimeout(() => {
+                modal.classList.add('hidden');
+            }, 200);
+        }
+
+        function nextQuestion() {
+            currentIdx++;
+            if (currentIdx < questions.length) {
+                renderHostQuestion();
+            } else {
+                alert("모든 게임이 종료되었습니다. 수고하셨습니다!");
+                // 종료 화면 로직 (생략)
+            }
+        }
+
+
+        // ================= [게스트 로직] =================
+
+        function showJoinInput() {
+            document.getElementById('join-form').classList.remove('hidden');
+        }
+
+        function joinRoom() {
+            const code = document.getElementById('room-code-input').value;
+            if (code.length !== 4) {
+                alert("4자리 코드를 입력해주세요.");
+                return;
+            }
+            
+            msgEl.innerText = "연결 시도 중...";
+            const hostId = getPeerId(code);
+
+            // 게스트용 Peer 생성 (ID 자동 생성)
+            peer = new Peer();
+            
+            peer.on('open', () => {
+                conn = peer.connect(hostId);
+
+                conn.on('open', () => {
+                    msgEl.innerText = "연결 성공!";
+                    myRoomCode = code;
+                    enterGuestMode();
+                });
+
+                conn.on('data', (data) => {
+                    handleDataFromHost(data);
+                });
+
+                conn.on('close', () => {
+                    alert("호스트와 연결이 끊어졌습니다.");
+                    location.reload();
+                });
+
+                // 5초 뒤에도 연결 안되면 에러 처리
+                setTimeout(() => {
+                    if (!conn.open) {
+                        msgEl.innerText = "방을 찾을 수 없습니다. 코드를 확인하세요.";
+                    }
+                }, 5000);
+            });
+
+            peer.on('error', (err) => {
+                console.error(err);
+                msgEl.innerText = "연결 오류. 다시 시도해주세요.";
+            });
+        }
+
+        function enterGuestMode() {
+            document.getElementById('screen-lobby').classList.add('hidden');
+            document.getElementById('screen-guest').classList.remove('hidden');
+            document.getElementById('screen-guest').classList.add('flex');
+            document.getElementById('guest-room-code').innerText = myRoomCode;
+        }
+
+        function handleDataFromHost(data) {
+            if (data.type === 'STATE' || data.type === 'NEW_ROUND') {
+                // 화면 갱신
+                document.getElementById('guest-q-title').innerText = data.title;
+                document.getElementById('guest-opt-a').innerText = data.optA.split('(')[0]; // 괄호 뒤 제거해서 깔끔하게
+                document.getElementById('guest-opt-b').innerText = data.optB.split('(')[0];
+                
+                // 선택 초기화
+                resetGuestButtons();
+
+                if (data.isOpen) openGuestVote();
+                else closeGuestVote("다음 라운드 대기중...");
+            }
+            else if (data.type === 'VOTE_START') {
+                openGuestVote();
+            }
+            else if (data.type === 'VOTE_END') {
+                closeGuestVote("투표가 마감되었습니다.");
+            }
+        }
+
+        function openGuestVote() {
+            const area = document.getElementById('vote-area');
+            const status = document.getElementById('guest-status');
+            area.classList.remove('opacity-50', 'pointer-events-none');
+            status.innerText = "투표하세요!";
+            status.className = "mt-4 text-center font-bold text-green-400 h-8 animate-pulse";
+        }
+
+        function closeGuestVote(msg) {
+            const area = document.getElementById('vote-area');
+            const status = document.getElementById('guest-status');
+            area.classList.add('opacity-50', 'pointer-events-none');
+            status.innerText = msg;
+            status.className = "mt-4 text-center font-bold text-yellow-400 h-8";
+        }
+
+        function sendVote(choice) {
+            // UI 피드백
+            resetGuestButtons();
+            const btn = document.getElementById(choice === 'A' ? 'btn-a' : 'btn-b');
+            btn.classList.add('selected');
+            
+            // 서버 전송
+            conn.send({ type: 'VOTE', choice: choice });
+            
+            // 투표 후 잠금 (선택 변경 불가하게 하려면 여기 주석 해제)
+            // closeGuestVote("투표 완료! 결과 대기중...");
+            document.getElementById('guest-status').innerText = "투표 완료! (변경 가능)";
+        }
+
+        function resetGuestButtons() {
+            document.getElementById('btn-a').classList.remove('selected');
+            document.getElementById('btn-b').classList.remove('selected');
+        }
+
+    </script>
+</body>
+</html>
