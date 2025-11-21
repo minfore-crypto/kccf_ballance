@@ -3,14 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>2025 경기도문화원연합회 합동연수 밸런스 게임</title>
+    <title>2025 경기도문화원연합회 합동연수 밸런스 게임 (중복방지 ver)</title>
     
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- PeerJS (서버 없는 통신용) -->
     <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
-    <!-- QR Code 라이브러리 -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     
     <link href="https://fonts.googleapis.com/css2?family=Jua&family=Noto+Sans+KR:wght@400;700;900&display=swap" rel="stylesheet">
     <style>
@@ -39,7 +37,7 @@
             font-size: 4rem; transition: all 0.1s; position: relative; overflow: hidden;
         }
         .vote-btn:active { transform: scale(0.95); filter: brightness(0.9); }
-        .vote-btn.selected { border: 8px solid #fbbf24; transform: scale(0.98); }
+        .vote-btn.selected { border: 8px solid #fbbf24; transform: scale(0.98); background-image: linear-gradient(rgba(0,0,0,0.2), rgba(0,0,0,0.2)); }
 
         /* 결과 바 */
         .bar-bg { width: 100%; background: #374151; height: 3rem; border-radius: 99px; overflow: hidden; position: relative; }
@@ -58,7 +56,7 @@
     <!-- ================= [1. 로비 화면] ================= -->
     <div id="screen-lobby" class="flex-1 flex flex-col items-center justify-center p-6 max-w-md mx-auto w-full">
         <h1 class="text-4xl text-yellow-400 mb-2 text-center leading-tight">2025 합동연수<br>밸런스 게임</h1>
-        <p class="text-gray-400 mb-8 text-center text-sm">실시간 인터랙티브 투표 시스템</p>
+        <p class="text-gray-400 mb-8 text-center text-sm">중복 투표 방지 시스템 적용됨</p>
         
         <div class="w-full space-y-4">
             <button onclick="createRoom()" class="lobby-btn bg-indigo-600 hover:bg-indigo-500">
@@ -69,7 +67,6 @@
             </button>
         </div>
 
-        <!-- 참여하기 코드 입력 폼 -->
         <div id="join-form" class="hidden w-full mt-6 p-4 bg-gray-800 rounded-xl fade-in">
             <label class="block text-gray-400 mb-2 text-center">진행자 화면의 4자리 코드를 입력하세요</label>
             <div class="flex gap-2">
@@ -82,14 +79,14 @@
 
     <!-- ================= [2. 호스트(진행자) 화면] ================= -->
     <div id="screen-host" class="hidden h-full flex-col bg-gray-900 relative">
-        <!-- 상단 정보바 -->
         <div class="bg-gray-800 p-3 flex justify-between items-center shadow-lg z-50">
             <div class="flex items-center gap-4">
                 <div class="bg-indigo-600 px-3 py-1 rounded-lg font-mono font-bold text-xl">
                     방 코드: <span id="host-room-code" class="text-yellow-300 tracking-widest">----</span>
                 </div>
                 <div class="text-gray-400 text-sm">
-                    👤 접속자: <span id="connected-count" class="text-white font-bold text-lg">0</span>명
+                    👤 접속: <span id="connected-count" class="text-white font-bold text-lg">0</span>명 / 
+                    🗳️ 투표: <span id="vote-total-count" class="text-green-400 font-bold text-lg">0</span>명
                 </div>
             </div>
             <div class="flex gap-2">
@@ -99,47 +96,39 @@
             </div>
         </div>
 
-        <!-- 게임 메인 -->
         <div class="flex-1 relative flex flex-col md:flex-row">
-            <!-- 질문 텍스트 (오버레이) -->
             <div class="absolute top-0 left-0 w-full p-6 z-40 pointer-events-none text-center">
                 <span id="q-badge" class="bg-yellow-400 text-black px-3 py-1 rounded-full font-bold shadow-lg mb-2 inline-block">Round 1</span>
                 <h2 id="q-title" class="text-3xl md:text-5xl text-shadow font-bold leading-tight drop-shadow-md">질문 대기중...</h2>
             </div>
 
-            <!-- VS 뱃지 -->
             <div class="vs-badge">VS</div>
 
-            <!-- 옵션 A -->
             <div class="flex-1 bg-red-600 flex flex-col items-center justify-center p-4 text-center relative overflow-hidden">
                 <div class="z-10 mt-16">
                     <div class="text-6xl mb-4 drop-shadow-lg">🅰️</div>
                     <h3 id="host-opt-a" class="text-3xl md:text-4xl font-bold mb-2">옵션 A</h3>
                     <p id="host-sub-a" class="text-xl text-red-100 bg-red-800/40 px-3 py-1 rounded inline-block">설명</p>
                 </div>
-                <!-- 투표율 차오르는 배경 -->
                 <div id="fill-a" class="absolute bottom-0 left-0 w-full bg-black/30 transition-all duration-700" style="height: 0%"></div>
                 <div id="count-a" class="absolute bottom-4 left-4 text-4xl font-bold opacity-50 z-20">0</div>
             </div>
 
-            <!-- 옵션 B -->
             <div class="flex-1 bg-blue-600 flex flex-col items-center justify-center p-4 text-center relative overflow-hidden">
                 <div class="z-10 mt-16">
                     <div class="text-6xl mb-4 drop-shadow-lg">🅱️</div>
                     <h3 id="host-opt-b" class="text-3xl md:text-4xl font-bold mb-2">옵션 B</h3>
                     <p id="host-sub-b" class="text-xl text-blue-100 bg-blue-800/40 px-3 py-1 rounded inline-block">설명</p>
                 </div>
-                <!-- 투표율 차오르는 배경 -->
                 <div id="fill-b" class="absolute bottom-0 left-0 w-full bg-black/30 transition-all duration-700" style="height: 0%"></div>
                 <div id="count-b" class="absolute bottom-4 right-4 text-4xl font-bold opacity-50 z-20">0</div>
             </div>
         </div>
 
-        <!-- 결과(팩트체크) 모달 -->
         <div id="result-modal" class="hidden absolute inset-0 modal z-50 flex items-center justify-center p-4">
             <div class="bg-white text-gray-900 rounded-2xl max-w-4xl w-full p-8 shadow-2xl transform transition-all scale-95 opacity-0" id="result-card">
                 <div class="text-center mb-6">
-                    <h2 class="text-3xl font-bold mb-4">📊 투표 결과</h2>
+                    <h2 class="text-3xl font-bold mb-4">📊 투표 결과 (총 <span id="final-total">0</span>명)</h2>
                     <div class="space-y-4 mb-8">
                         <div class="flex items-center gap-3">
                             <div class="text-2xl font-bold text-red-600 w-8">A</div>
@@ -162,15 +151,13 @@
 
     <!-- ================= [3. 게스트(참가자) 화면] ================= -->
     <div id="screen-guest" class="hidden h-full flex-col p-4 bg-gray-900">
-        <!-- 상단 상태 -->
         <div class="text-center mb-4">
             <div class="inline-block bg-gray-800 px-4 py-1 rounded-full text-sm text-gray-400 mb-2">
-                Connected to: <span id="guest-room-code" class="text-white font-bold">----</span>
+                ID: <span id="my-voter-id" class="font-mono text-xs">...</span>
             </div>
             <h2 id="guest-q-title" class="text-xl font-bold text-white leading-snug break-keep">질문 대기중...</h2>
         </div>
 
-        <!-- 투표 버튼 영역 -->
         <div id="vote-area" class="flex-1 flex flex-col gap-4 opacity-50 pointer-events-none transition-opacity duration-300">
             <button onclick="sendVote('A')" id="btn-a" class="vote-btn bg-red-600">
                 <span class="text-6xl mb-2">🅰️</span>
@@ -182,7 +169,6 @@
             </button>
         </div>
 
-        <!-- 하단 상태 메시지 -->
         <div id="guest-status" class="mt-4 text-center font-bold text-yellow-400 h-8 animate-pulse">
             사회자가 투표를 시작하기를 기다려주세요...
         </div>
@@ -266,20 +252,31 @@
         // --- 전역 변수 ---
         let peer = null;
         let conn = null; // 게스트용
-        let connections = []; // 호스트용 (연결된 게스트들)
+        let connections = []; // 호스트용
         let myRoomCode = "";
         let currentIdx = 0;
-        let votes = { A: 0, B: 0 };
         let isVotingOpen = false;
         let isHost = false;
+
+        // [중복 투표 방지용 핵심 변수]
+        let voterId = ""; // 게스트: 나의 고유 ID
+        let roundVotes = new Map(); // 호스트: { 'voterId123': 'A', 'voterId456': 'B' }
 
         // DOM 요소
         const msgEl = document.getElementById('status-msg');
         
-        // ================= [PeerJS 공통 로직] =================
+        // ================= [초기화 및 유틸] =================
         
+        window.onload = function() {
+            // 게스트용: 브라우저에 고유 ID 생성 및 저장 (새로고침해도 유지)
+            if (!localStorage.getItem('ggcc_voter_id')) {
+                localStorage.setItem('ggcc_voter_id', Math.random().toString(36).substr(2, 9));
+            }
+            voterId = localStorage.getItem('ggcc_voter_id');
+            document.getElementById('my-voter-id').innerText = voterId;
+        };
+
         function generateRoomCode() {
-            // 랜덤 4자리 숫자 코드 생성 (충돌 방지 위해 Prefix 사용)
             return Math.floor(1000 + Math.random() * 9000).toString();
         }
         
@@ -294,24 +291,18 @@
             const code = generateRoomCode();
             const peerId = getPeerId(code);
             
-            // PeerJS 객체 생성
-            peer = new Peer(peerId, {
-                debug: 1
-            });
+            peer = new Peer(peerId);
 
             peer.on('open', (id) => {
-                console.log('My peer ID is: ' + id);
                 myRoomCode = code;
                 isHost = true;
                 enterHostMode();
             });
 
             peer.on('connection', (c) => {
-                // 게스트 접속 시
                 connections.push(c);
-                updateConnectionCount();
+                updateHostStats();
                 
-                // 현재 상태 전송
                 setTimeout(() => {
                     sendStateTo(c); 
                 }, 500);
@@ -322,17 +313,13 @@
                 
                 c.on('close', () => {
                     connections = connections.filter(conn => conn !== c);
-                    updateConnectionCount();
+                    updateHostStats();
                 });
             });
 
             peer.on('error', (err) => {
-                console.error(err);
-                if(err.type === 'unavailable-id') {
-                    createRoom(); // ID 충돌시 재시도
-                } else {
-                    alert("연결 오류: " + err.type);
-                }
+                if(err.type === 'unavailable-id') createRoom(); 
+                else alert("연결 오류: " + err.type);
             });
         }
 
@@ -341,12 +328,12 @@
             document.getElementById('screen-host').classList.remove('hidden');
             document.getElementById('screen-host').classList.add('flex');
             document.getElementById('host-room-code').innerText = myRoomCode;
-            
             renderHostQuestion();
         }
 
-        function updateConnectionCount() {
+        function updateHostStats() {
             document.getElementById('connected-count').innerText = connections.length;
+            document.getElementById('vote-total-count').innerText = roundVotes.size; // 실제 투표한 인원수
         }
 
         function broadcast(data) {
@@ -365,17 +352,21 @@
             });
         }
 
+        // [핵심] 호스트가 투표를 받는 로직
         function handleDataFromGuest(data) {
             if (data.type === 'VOTE') {
                 if (!isVotingOpen) return;
-                // 투표 집계
-                if (data.choice === 'A') votes.A++;
-                if (data.choice === 'B') votes.B++;
+                
+                // 중복 투표 방지 로직 (Map 사용)
+                // ID가 이미 있으면 덮어씌움 (선택 변경 허용), 없으면 추가
+                roundVotes.set(data.voterId, data.choice);
+                
+                // UI 업데이트
                 updateHostVoteUI();
+                updateHostStats();
             }
         }
 
-        // 호스트 UI 제어
         function renderHostQuestion() {
             const q = questions[currentIdx];
             document.getElementById('q-badge').innerText = `Round ${currentIdx + 1}`;
@@ -385,13 +376,14 @@
             document.getElementById('host-opt-b').innerText = q.b;
             document.getElementById('host-sub-b').innerText = q.bSub;
             
-            // 초기화
-            votes = { A: 0, B: 0 };
+            // 투표함 초기화
+            roundVotes.clear(); 
             updateHostVoteUI();
+            updateHostStats();
+            
             document.getElementById('fill-a').style.height = '0%';
             document.getElementById('fill-b').style.height = '0%';
             
-            // 버튼 상태
             document.getElementById('btn-toggle-vote').classList.remove('hidden');
             document.getElementById('btn-toggle-vote').innerText = "투표 시작";
             document.getElementById('btn-toggle-vote').className = "bg-green-600 px-4 py-2 rounded hover:bg-green-500 font-bold transition-colors";
@@ -418,36 +410,50 @@
         }
 
         function updateHostVoteUI() {
-            const total = votes.A + votes.B;
+            // Map에서 A와 B 개수 세기
+            let countA = 0;
+            let countB = 0;
+            roundVotes.forEach((choice) => {
+                if (choice === 'A') countA++;
+                else if (choice === 'B') countB++;
+            });
+
+            document.getElementById('count-a').innerText = countA;
+            document.getElementById('count-b').innerText = countB;
+
+            // 그래프 높이 (최대값 기준이 아니라 전체 대비 비율로)
+            const total = countA + countB;
             if (total > 0) {
-                // 단순 수치만 보여주거나, 살짝 차오르는 느낌 (아직 결과 공개 전이므로 50% 높이 제한 등으로 힌트만 줌)
-                // 여기서는 실시간으로 높이를 반영하되, 숫자는 숨기는 식도 가능. 
-                // 요청사항: "실시간으로 올라가는" -> 다 보여줌.
-                const perA = (votes.A / total) * 100;
-                const perB = (votes.B / total) * 100;
+                const perA = (countA / total) * 100;
+                const perB = (countB / total) * 100;
                 document.getElementById('fill-a').style.height = `${perA}%`;
                 document.getElementById('fill-b').style.height = `${perB}%`;
             }
-            document.getElementById('count-a').innerText = votes.A;
-            document.getElementById('count-b').innerText = votes.B;
         }
 
         function revealResult() {
             const q = questions[currentIdx];
-            const total = votes.A + votes.B || 1;
-            const perA = Math.round((votes.A / total) * 100);
+            
+            // 최종 집계
+            let countA = 0;
+            let countB = 0;
+            roundVotes.forEach((choice) => {
+                if (choice === 'A') countA++;
+                else if (choice === 'B') countB++;
+            });
+            const total = countA + countB || 1;
+            const perA = Math.round((countA / total) * 100);
             const perB = 100 - perA;
 
-            // 모달 내용 채우기
+            document.getElementById('final-total').innerText = countA + countB;
             document.getElementById('bar-a').style.width = `${perA}%`;
-            document.getElementById('bar-a').innerText = `${perA}% (${votes.A}명)`;
+            document.getElementById('bar-a').innerText = `${perA}% (${countA}명)`;
             document.getElementById('bar-b').style.width = `${perB}%`;
-            document.getElementById('bar-b').innerText = `${perB}% (${votes.B}명)`;
+            document.getElementById('bar-b').innerText = `${perB}% (${countB}명)`;
             
             document.getElementById('fact-title').innerHTML = q.factTitle;
             document.getElementById('fact-desc').innerHTML = q.factDesc;
 
-            // 모달 표시
             const modal = document.getElementById('result-modal');
             const card = document.getElementById('result-card');
             modal.classList.remove('hidden');
@@ -475,7 +481,6 @@
                 renderHostQuestion();
             } else {
                 alert("모든 게임이 종료되었습니다. 수고하셨습니다!");
-                // 종료 화면 로직 (생략)
             }
         }
 
@@ -488,15 +493,11 @@
 
         function joinRoom() {
             const code = document.getElementById('room-code-input').value;
-            if (code.length !== 4) {
-                alert("4자리 코드를 입력해주세요.");
-                return;
-            }
+            if (code.length !== 4) return alert("4자리 코드를 입력해주세요.");
             
             msgEl.innerText = "연결 시도 중...";
             const hostId = getPeerId(code);
 
-            // 게스트용 Peer 생성 (ID 자동 생성)
             peer = new Peer();
             
             peer.on('open', () => {
@@ -508,55 +509,31 @@
                     enterGuestMode();
                 });
 
-                conn.on('data', (data) => {
-                    handleDataFromHost(data);
-                });
-
-                conn.on('close', () => {
-                    alert("호스트와 연결이 끊어졌습니다.");
-                    location.reload();
-                });
-
-                // 5초 뒤에도 연결 안되면 에러 처리
-                setTimeout(() => {
-                    if (!conn.open) {
-                        msgEl.innerText = "방을 찾을 수 없습니다. 코드를 확인하세요.";
-                    }
-                }, 5000);
+                conn.on('data', handleDataFromHost);
+                conn.on('close', () => { alert("호스트와 연결이 끊어졌습니다."); location.reload(); });
+                setTimeout(() => { if (!conn.open) msgEl.innerText = "방을 찾을 수 없습니다."; }, 5000);
             });
 
-            peer.on('error', (err) => {
-                console.error(err);
-                msgEl.innerText = "연결 오류. 다시 시도해주세요.";
-            });
+            peer.on('error', (err) => msgEl.innerText = "연결 오류. 다시 시도해주세요.");
         }
 
         function enterGuestMode() {
             document.getElementById('screen-lobby').classList.add('hidden');
             document.getElementById('screen-guest').classList.remove('hidden');
             document.getElementById('screen-guest').classList.add('flex');
-            document.getElementById('guest-room-code').innerText = myRoomCode;
         }
 
         function handleDataFromHost(data) {
             if (data.type === 'STATE' || data.type === 'NEW_ROUND') {
-                // 화면 갱신
                 document.getElementById('guest-q-title').innerText = data.title;
-                document.getElementById('guest-opt-a').innerText = data.optA.split('(')[0]; // 괄호 뒤 제거해서 깔끔하게
+                document.getElementById('guest-opt-a').innerText = data.optA.split('(')[0];
                 document.getElementById('guest-opt-b').innerText = data.optB.split('(')[0];
-                
-                // 선택 초기화
                 resetGuestButtons();
-
                 if (data.isOpen) openGuestVote();
                 else closeGuestVote("다음 라운드 대기중...");
             }
-            else if (data.type === 'VOTE_START') {
-                openGuestVote();
-            }
-            else if (data.type === 'VOTE_END') {
-                closeGuestVote("투표가 마감되었습니다.");
-            }
+            else if (data.type === 'VOTE_START') openGuestVote();
+            else if (data.type === 'VOTE_END') closeGuestVote("투표가 마감되었습니다.");
         }
 
         function openGuestVote() {
@@ -576,16 +553,17 @@
         }
 
         function sendVote(choice) {
-            // UI 피드백
             resetGuestButtons();
             const btn = document.getElementById(choice === 'A' ? 'btn-a' : 'btn-b');
             btn.classList.add('selected');
             
-            // 서버 전송
-            conn.send({ type: 'VOTE', choice: choice });
+            // [중복 방지] 내 ID를 함께 전송
+            conn.send({ 
+                type: 'VOTE', 
+                choice: choice,
+                voterId: voterId 
+            });
             
-            // 투표 후 잠금 (선택 변경 불가하게 하려면 여기 주석 해제)
-            // closeGuestVote("투표 완료! 결과 대기중...");
             document.getElementById('guest-status').innerText = "투표 완료! (변경 가능)";
         }
 
